@@ -24,5 +24,45 @@
       "no_infrared_emitter": "Keine Infrarot-Sender gefunden. Flash zuerst eine ESPHome-ir_rf_proxy-Firmware.",
       "already_configured": "Für diesen IR-Proxy ist bereits eine LG-Klima-Entity eingerichtet."
     }
+  },
+  "entity": {
+    "button": {
+      "light_toggle": {
+        "name": "Display-LED umschalten"
+      },
+      "clear_timers": {
+        "name": "Alle Timer löschen"
+      }
+    }
+  },
+  "services": {
+    "set_sleep_timer": {
+      "name": "Sleep-Timer setzen",
+      "description": "Aktiviert den Sleep-Timer (Klima schaltet nach N Minuten aus). 0 = abbrechen.",
+      "fields": {
+        "minutes": {
+          "name": "Minuten",
+          "description": "0 bricht ab; 60-420 entspricht den 1h..7h-Stufen der Fernbedienung."
+        }
+      }
+    },
+    "set_schedule_timer": {
+      "name": "Schalt-Timer setzen",
+      "description": "Klima zeitverzögert ein- oder ausschalten.",
+      "fields": {
+        "action": {
+          "name": "Aktion",
+          "description": "Ob die Klima ein- oder ausgeschaltet werden soll, wenn der Timer abläuft."
+        },
+        "minutes": {
+          "name": "Verzögerung (Minuten)",
+          "description": "Minuten bis die Aktion ausgelöst wird."
+        }
+      }
+    },
+    "clear_timers": {
+      "name": "Alle Timer löschen",
+      "description": "Bricht aktiven Sleep-, Ein- oder Aus-Schalt-Timer ab."
+    }
   }
 }

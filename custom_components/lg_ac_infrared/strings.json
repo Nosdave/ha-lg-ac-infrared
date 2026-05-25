@@ -24,5 +24,45 @@
       "no_infrared_emitter": "No infrared transmitter entities found. Flash an ESPHome ir_rf_proxy firmware first.",
       "already_configured": "This IR proxy already has an LG AC entity configured."
     }
+  },
+  "entity": {
+    "button": {
+      "light_toggle": {
+        "name": "Toggle display LED"
+      },
+      "clear_timers": {
+        "name": "Clear all timers"
+      }
+    }
+  },
+  "services": {
+    "set_sleep_timer": {
+      "name": "Set sleep timer",
+      "description": "Activate the sleep timer (AC auto-off after N minutes). Pass 0 to cancel.",
+      "fields": {
+        "minutes": {
+          "name": "Minutes",
+          "description": "0 cancels; 60-420 mirrors the remote's 1h..7h presets."
+        }
+      }
+    },
+    "set_schedule_timer": {
+      "name": "Set schedule timer",
+      "description": "Schedule the AC to turn on or off after a delay.",
+      "fields": {
+        "action": {
+          "name": "Action",
+          "description": "Whether the AC should turn on or off when the timer fires."
+        },
+        "minutes": {
+          "name": "Delay (minutes)",
+          "description": "Minutes until the action fires."
+        }
+      }
+    },
+    "clear_timers": {
+      "name": "Clear all timers",
+      "description": "Cancel any active sleep, on-schedule, or off-schedule timer."
+    }
   }
 }

@@ -23,18 +23,27 @@ Send + receive paths confirmed with bit-identical capture/diff. See
 [scripts/capture_ir.py](scripts/capture_ir.py) and
 [scripts/send_test.py](scripts/send_test.py).
 
-## Features
+## Features (v0.2)
 
-- Power on / off
-- HVAC modes: **off, cool, dry, fan_only, auto, heat**
-- Target temperature **16–30 °C** (whole-degree steps)
-- Fan modes: **auto, low, medium, high, powerful**
-  - `powerful` = LG "Jet" mode (closes side vents, full-blast downward)
-  - `medium` is tentative — captured fan-cycle on A12AHD skipped this value;
-    if your unit ignores it, fall back to `low` or `high`
-- **Bidirectional state sync** — if you grab the original remote and change
-  anything, the HA entity reflects it
-- Optional room-temperature sensor exposed as `current_temperature`
+- **Power** on / off
+- **HVAC modes**: `off`, `cool`, `dry`, `fan_only`, `auto`, `heat`
+- **Target temperature** 16–30 °C (whole-degree steps)
+- **Fan modes**: `auto` (variable / "schwankend"), `low`, `medium`, `high` (constant full)
+- **Swing modes**: `off`, `on` (auto-swing), plus 6 vertical positions
+  (`lowest`, `low`, `middle`, `upper_middle`, `high`, `highest`)
+- **Preset modes**:
+  - `jet` — Powerful mode (closes side vents, full-blast downward)
+  - `sleep` — 7-hour sleep timer (default; configurable via service)
+  - `clean` — Auto-clean / self-clean (dries the evaporator)
+  - `purify` — Plasma / Ionizer
+  - `eco` — Energy-save mode (inverter models only)
+- **Service actions**:
+  - `lg_ac_infrared.set_sleep_timer` — 0..1439 min (0 cancels)
+  - `lg_ac_infrared.set_schedule_timer` — delayed on/off
+  - `lg_ac_infrared.clear_timers` — cancel all active timers
+- **Button entities**: `button.*_toggle_display_led`, `button.*_clear_all_timers`
+- **Bidirectional state sync** — manual remote operation updates HA entity
+- **Optional room-temperature sensor** exposed as `current_temperature`
 - Pure local control — no cloud, no LG account
 
 ## Architecture

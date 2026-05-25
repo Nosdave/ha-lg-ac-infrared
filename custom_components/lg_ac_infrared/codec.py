@@ -1,31 +1,32 @@
 """LG split-AC IR codec (classic 28-bit protocol).
 
-Encodes and decodes state frames for the 6711A20*** / 6711AR2*** remote
-families and compatible LG splits.
+Encodes and decodes state frames and special-function frames for the
+6711A20*** / 6711AR2*** remote families and compatible LG splits.
 
 Target: LG A12AHD (AS-H126PDL1), remote 6711A20073Z. Verified against
-real captures (see scripts/capture_ir.py). No external dependencies.
+real captures (see scripts/capture_ir.py).
 
-Frame layout (28 bits, MSB first on the air):
-  27..20  Sign         constant 0x88
-  19..18  Power        00 = ON, 11 = OFF (sent as hardcoded OFF_FRAME)
-  17..15  Function     0 = state frame (our encoder always sets 0).
-                       Bit 15 alone = "manual override" set by the remote
-                       on modifications — accepted equally on receive.
-                       Bits 16/17 set => swing/timer/sub-OFF frame.
-  14..12  Mode         0=cool, 1=dry, 2=fan_only, 3=auto, 4=heat
-  11..8   Temperature  (degC - 15), valid 1..15  (16..30 degC)
-  7..4    Fan          0=auto, 2=low, 4=high (constant), 5=powerful (jet/auto-high)
-                       Note: Arduino-IRremote AC_FAN_WALL labels 5 as "high",
-                       but live-tested on A12AHD: 4 is constant-full, 5 is the
-                       variable "Powerful"/Jet mode. Tower-mount models use
-                       AC_FAN_TOWER {0,4,6,6} — not supported by this codec.
-  3..0    Checksum     sum of nibbles over bits 4..19 (4 nibbles), & 0xF
+Frame structure (Arduino-IRremote LGProtocol union):
+  bits 27..20  Signature   (0x88)
+  bits 19..16  Function    (0=state, 1=swing/jet, 8=timer-on, 9=timer-off,
+                            A=sleep, B=clear-all, C=sub-toggle)
+  bits 15..04  Payload     (depends on function family)
+  bits  3..00  Checksum    (sum of nibbles 27..4, mod 16)
 
-Special frames recognised as "not a state change":
-  Power-bits 01 / 10  -> timer / function modes
-  0x88C0051           -> canonical power-off
-  Other 0x88C00__     -> display/light/beep sub-toggles (treated as OFF)
+State frames (Function=0):
+  bits 19..18  Power       00=ON, 11=OFF (canonical OFF = 0x88C0051)
+  bits 17..15  Function    state-change flag (bit 15 set on most user
+                           actions; AC accepts both)
+  bits 14..12  Mode        0=cool, 1=dry, 2=fan_only, 3=auto, 4=heat
+  bits 11..08  Temp        degC - 15  (16..30 degC)
+  bits  7..04  Fan         0=lowest, 2=medium, 4=max, 5=auto (variable),
+                           0xA=high (newer remotes only)
+
+Sources:
+  - IRremoteESP8266 src/ir_LG.{h,cpp}
+  - frawau/pyhvac plugins/lg.py
+  - Arduino-IRremote src/ac_LG.{h,hpp}
+  - Live captures against A12AHD
 """
 
 from __future__ import annotations
@@ -58,14 +59,72 @@ class Mode(IntEnum):
 
 
 class Fan(IntEnum):
-    AUTO = 0      # variable, adapts to load (the "schwankende" speed)
-    LOW = 2
-    MEDIUM = 3    # tentative — captured cycle on A12AHD skips this value;
-                  # may not exist on this model. UI exposes it; falls back
-                  # to nearest level on hardware that ignores it.
-    HIGH = 4      # constant full speed (verified on A12AHD)
-    POWERFUL = 5  # "Jet" mode — closes side vents, full-blast downward
-                  # (Arduino-IRremote calls this "high" in AC_FAN_WALL)
+    """LG fan speeds — live-verified mapping on A12AHD.
+
+    Note: pyhvac/IRremoteESP8266 historically labelled fan=5 as "AUTO"
+    and fan=4 as "MAX" — confirmed correct on this hardware. The button
+    cycle on the 6711A20073Z remote produces (in order): 0, 2, 4, 5,
+    matching Lowest -> Medium -> Max -> Auto.
+    """
+
+    LOWEST = 0
+    LOW = 1       # rare on real remotes; not in 6711A20073Z button cycle
+    MEDIUM = 2
+    MAX = 4       # constant full speed
+    AUTO = 5      # variable, "schwankend"
+    HIGH = 0xA    # only on newer InverterV/DualInverter remotes
+
+
+# ---------------------------------------------------------------------------
+# Named hardcoded frames (Function != 0). Verified against pyhvac + IResp8266.
+# Each is a single-shot command from the remote, no state encoding.
+# ---------------------------------------------------------------------------
+
+# Jet (Powerful) — closes side vents, full-blast downward
+JET_ON = 0x8810089
+# To exit jet: send any normal state frame (no discrete jet-off code)
+
+# Light / display LED toggle
+LIGHT_TOGGLE = 0x88C00A6
+
+# Air purify / Plasmaster / Ionizer
+PURIFY_ON = 0x88C000C
+PURIFY_OFF = 0x88C0084
+
+# Auto-clean / Self-cleaning (the "face with nose" button — dries the
+# evaporator after cool mode to prevent mould)
+CLEAN_ON = 0x88C00C8
+CLEAN_OFF = 0x88C00B7
+
+# Energy-save modes (inverter models only — may be no-op on A12AHD)
+ENERGY_SAVE_OFF = 0x88C07F2
+ENERGY_SAVE_80 = 0x88C07D0
+ENERGY_SAVE_60 = 0x88C07E1
+ENERGY_SAVE_40 = 0x88C0804
+
+# Diagnostic / service mode — DO NOT expose to users
+DIAGNOSTIC = 0x88C0CE6
+
+# Vertical swing (Function=0x1, sub-family 0x88130** + 0x8813xxx)
+SWING_V_TOGGLE = 0x8810001
+SWING_V_LOWEST = 0x8813048
+SWING_V_LOW = 0x8813059
+SWING_V_MIDDLE = 0x881306A
+SWING_V_UPPER_MIDDLE = 0x881307B
+SWING_V_HIGH = 0x881308C
+SWING_V_HIGHEST = 0x881309D
+SWING_V_SWING = 0x8813149   # auto-swing across all positions
+SWING_V_OFF = 0x881315A
+
+# Horizontal swing (only on DualInverter / newer remotes, may be no-op on A12AHD)
+SWING_H_AUTO = 0x881316B
+SWING_H_OFF = 0x881317C
+
+# Timer clear-all
+TIMER_CLEAR_ALL = 0x88B000B
+
+# Sleep cancel (also covered by encode_sleep_timer(0))
+SLEEP_CANCEL = 0x88A000A
 
 
 @dataclass(frozen=True)
@@ -85,7 +144,13 @@ def _checksum(frame_without_csum: int) -> int:
     return s & 0xF
 
 
+def _attach_checksum(frame_no_csum: int) -> int:
+    """Pack the low-nibble checksum onto a frame whose low nibble is zero."""
+    return (frame_no_csum & 0x0FFFFFF0) | _checksum(frame_no_csum)
+
+
 def encode(state: LgAcState) -> int:
+    """Build the 28-bit frame for a desired AC state."""
     if not state.power_on:
         return OFF_FRAME
     if state.mode is None or state.temp is None or state.fan is None:
@@ -99,6 +164,32 @@ def encode(state: LgAcState) -> int:
     code |= (int(state.fan) & 0xF) << 4
     code |= _checksum(code)
     return code & 0x0FFFFFFF
+
+
+def encode_sleep_timer(minutes: int) -> int:
+    """Build a sleep-timer frame. minutes=0 cancels; range 0..1439.
+
+    The remote button only steps in 60-min increments (1..7 h), but the
+    on-air protocol accepts arbitrary minute values.
+    """
+    if not 0 <= minutes <= 1439:
+        raise ValueError(f"sleep minutes {minutes} out of range 0..1439")
+    body = 0x88A000 | (minutes & 0xFFF)
+    return _attach_checksum(body << 4)
+
+
+def encode_schedule_timer(*, turn_on: bool, minutes: int) -> int:
+    """Build a delayed-on (turn_on=True) or delayed-off schedule frame.
+
+    minutes is the delay until the action, in absolute minutes since
+    the remote's internal clock 0 — but in practice these are relative
+    minutes (0..1439). For minute = m the on-air payload is m itself.
+    """
+    if not 0 <= minutes <= 1439:
+        raise ValueError(f"schedule minutes {minutes} out of range")
+    func_nibble = 0x8 if turn_on else 0x9
+    body = (SIGNATURE << 16) | (func_nibble << 12) | (minutes & 0xFFF)
+    return _attach_checksum(body << 4)
 
 
 def frame_to_raw_timings(frame28: int) -> list[int]:
@@ -117,10 +208,7 @@ def frame_to_raw_timings(frame28: int) -> list[int]:
 
 
 def decode_frame(timings: list[int]) -> int | None:
-    """Decode raw timings to a 28-bit frame integer, or None.
-
-    Tolerant of ~25% timing jitter. Ignores anything past the 28th bit.
-    """
+    """Decode raw timings to a 28-bit frame integer, or None."""
     if len(timings) < 2 + 28 * 2:
         return None
     if not (7000 <= timings[0] <= 10000):
@@ -135,11 +223,11 @@ def decode_frame(timings: list[int]) -> int | None:
 
 
 def decode_state(frame28: int) -> LgAcState | None:
-    """Interpret a 28-bit frame as an AC state.
+    """Interpret a 28-bit frame as an AC state, or None.
 
-    Returns None for timer/swing/function frames that don't change
-    the main state. Returns LgAcState(power_on=False) for any OFF
-    or sub-OFF code (display toggle, beep, etc.).
+    Returns None for timer/swing/jet/sub-toggle frames; those carry no
+    state and must be handled by the higher-level layer via the named
+    constants above.
     """
     if ((frame28 >> 20) & 0xFF) != SIGNATURE:
         return None
@@ -148,19 +236,15 @@ def decode_state(frame28: int) -> LgAcState | None:
 
     power_bits = (frame28 >> 18) & 0b11
     if power_bits == 0b11:
-        # Only the canonical OFF frame really turns the AC off.
-        # Other 0x88C00XX codes are display/light/beep/sleep toggles
-        # that share the power-OFF bit pattern but do not change power
-        # state — ignore so we do not falsely report OFF in HA.
         if frame28 == OFF_FRAME:
             return LgAcState(power_on=False)
-        return None
+        return None  # sub-OFF toggle (display/clean/purify) — not a state change
     if power_bits != 0b00:
         return None
 
     pad_high = (frame28 >> 16) & 0b11
     if pad_high:
-        return None
+        return None  # function frame (swing/jet), not a state frame
 
     mode_raw = (frame28 >> 12) & 0b111
     try:
@@ -181,45 +265,108 @@ def decode_state(frame28: int) -> LgAcState | None:
     return LgAcState(power_on=True, mode=mode, temp=temp, fan=fan)
 
 
+# ---------------------------------------------------------------------------
+# Sleep-timer decoder — recognises 0x88Axxxx frames and returns minutes.
+# ---------------------------------------------------------------------------
+
+def decode_sleep_timer(frame28: int) -> int | None:
+    """If frame is a sleep-timer frame, return minutes (0..1439); else None."""
+    # Sleep family: bits 27..16 must equal 0x88A.
+    if ((frame28 >> 16) & 0xFFF) != 0x88A:
+        return None
+    if _checksum(frame28) != (frame28 & 0xF):
+        return None
+    return (frame28 >> 4) & 0xFFF
+
+
+def decode_schedule_timer(frame28: int) -> tuple[bool, int] | None:
+    """If frame is a schedule-timer (Func=8 on / 9 off), return (on?, minutes)."""
+    if ((frame28 >> 20) & 0xFF) != SIGNATURE:
+        return None
+    if _checksum(frame28) != (frame28 & 0xF):
+        return None
+    func = (frame28 >> 16) & 0xF
+    if func == 0x8:
+        return True, (frame28 >> 4) & 0xFFF
+    if func == 0x9:
+        return False, (frame28 >> 4) & 0xFFF
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Self-test
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
-    # With bit15=0 (clean state frame): Cool/22C/Auto -> 0x8800707
-    # The remote sends 0x880870F (bit15=1, "manual override").
-    # AC accepts both — captured frame #22 (0x8800347) shows bit15=0 in real use.
+    # State-frame encodes
     state = LgAcState(power_on=True, mode=Mode.COOL, temp=22, fan=Fan.AUTO)
     f = encode(state)
-    assert f == 0x8800707, f"got 0x{f:07X}"
-    print(f"encode(ON Cool 22C Auto)     = 0x{f:07X}  OK")
-
-    f = encode(LgAcState(power_on=True, mode=Mode.COOL, temp=22, fan=Fan.HIGH))
-    assert f == 0x880074B, f"got 0x{f:07X}"
-    print(f"encode(ON Cool 22C High)     = 0x{f:07X}  OK (constant-full, verified)")
-
-    f = encode(LgAcState(power_on=True, mode=Mode.COOL, temp=22, fan=Fan.POWERFUL))
     assert f == 0x880075C, f"got 0x{f:07X}"
-    print(f"encode(ON Cool 22C Powerful) = 0x{f:07X}  OK (variable Jet mode)")
+    print(f"encode(ON Cool 22C Auto)    = 0x{f:07X}  OK  (fan=5, variable)")
+
+    f = encode(LgAcState(power_on=True, mode=Mode.COOL, temp=22, fan=Fan.MAX))
+    assert f == 0x880074B, f"got 0x{f:07X}"
+    print(f"encode(ON Cool 22C Max)     = 0x{f:07X}  OK  (fan=4, constant full)")
+
+    f = encode(LgAcState(power_on=True, mode=Mode.COOL, temp=22, fan=Fan.MEDIUM))
+    assert f == 0x8800729, f"got 0x{f:07X}"
+    print(f"encode(ON Cool 22C Medium)  = 0x{f:07X}  OK  (fan=2)")
+
+    f = encode(LgAcState(power_on=True, mode=Mode.COOL, temp=22, fan=Fan.LOWEST))
+    assert f == 0x8800707, f"got 0x{f:07X}"
+    print(f"encode(ON Cool 22C Lowest)  = 0x{f:07X}  OK  (fan=0)")
 
     assert encode(LgAcState(power_on=False)) == OFF_FRAME
-    print(f"encode(OFF)              = 0x{OFF_FRAME:07X}  OK")
+    print(f"encode(OFF)                 = 0x{OFF_FRAME:07X}  OK")
 
-    rt = frame_to_raw_timings(f)
-    assert decode_frame(rt) == f, "round-trip failed"
+    # Sleep timer round-trip — all live captures must encode identically
+    sleep_table = {
+        60: 0x88A03C9, 120: 0x88A0789, 180: 0x88A0B49, 240: 0x88A0F09,
+        300: 0x88A12C9, 360: 0x88A1689, 420: 0x88A1A49, 0: 0x88A000A,
+    }
+    for minutes, expected in sleep_table.items():
+        got = encode_sleep_timer(minutes)
+        assert got == expected, f"sleep {minutes}min: got 0x{got:07X}, exp 0x{expected:07X}"
+        m_back = decode_sleep_timer(got)
+        assert m_back == minutes, f"sleep decode {got:#x}: got {m_back}, exp {minutes}"
+    print("encode_sleep_timer/decode  60min..7h + cancel  OK  (matches live captures)")
+
+    # Round-trip frame ↔ timings
+    rt = frame_to_raw_timings(encode(state))
+    assert decode_frame(rt) == encode(state)
     print(f"round-trip frame <-> raw timings  OK ({len(rt)} entries)")
 
-    # Sanity-check against real captures.
+    # Decode samples
     samples = [
         (0x88C0051, "OFF (canonical)"),
-        (0x8800347, "ON Cool 18C fan=4 (real capture, bit15=0)"),
-        (0x8800707, "ON Cool 22C Auto (encoder output)"),
-        (0x880870F, "ON Cool 22C Auto (remote-sent, bit15=1)"),
-        (0x880B746, "ON Auto 22C fan=4 (real capture)"),
-        (0x8810001, "Swing-V Toggle  -> should be None"),
-        (0x88A03C9, "Timer-Mode      -> should be None"),
-        (0x88C00C8, "Sub-OFF (display) -> ignored (None, not OFF)"),
+        (0x8800347, "ON Cool 18C fan=4=Max (real capture, bit15=0)"),
+        (0x880075C, "ON Cool 22C fan=5=Auto (encoder output)"),
+        (0x880870F, "ON Cool 22C fan=0=Lowest (remote-sent, bit15=1)"),
+        (0x880B746, "ON Auto 22C fan=4=Max (real capture)"),
+        (0x8810089, "Jet ON  -> not a state frame"),
+        (0x88A03C9, "Sleep 1h  -> not a state frame"),
+        (0x88C00C8, "Clean ON  -> not a state frame"),
+        (0x88C0051, "OFF canonical  -> power_on=False"),
     ]
     for frame, label in samples:
         s = decode_state(frame)
         print(f"decode(0x{frame:07X})  {label:50s}  -> {s}")
 
     # Sub-OFF codes must NOT be reported as off
-    assert decode_state(0x88C00C8) is None, "sub-OFF code leaks as power-off"
+    assert decode_state(0x88C00C8) is None, "Clean ON leaks as power-off"
+    assert decode_state(0x88C000C) is None, "Purify ON leaks as power-off"
     assert decode_state(OFF_FRAME) == LgAcState(power_on=False)
+
+    # Named-frame integrity
+    print("\nNamed frames (checksum verification):")
+    for name in [
+        "JET_ON", "LIGHT_TOGGLE", "PURIFY_ON", "PURIFY_OFF",
+        "CLEAN_ON", "CLEAN_OFF", "SWING_V_TOGGLE", "SWING_V_MIDDLE",
+        "SWING_V_SWING", "SWING_H_AUTO", "SWING_H_OFF", "TIMER_CLEAR_ALL",
+        "SLEEP_CANCEL",
+    ]:
+        v = globals()[name]
+        expected_csum = _checksum(v)
+        actual_csum = v & 0xF
+        ok = "OK" if expected_csum == actual_csum else "BAD"
+        print(f"  {name:22s} = 0x{v:07X}  csum={ok}")

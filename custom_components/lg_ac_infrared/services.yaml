@@ -1,0 +1,62 @@
+set_sleep_timer:
+  name: Set sleep timer
+  description: >
+    Activate the sleep timer (AC auto-off after N minutes). The remote
+    button steps in 1-hour increments; this service accepts any value.
+    Pass 0 to cancel a running sleep timer.
+  target:
+    entity:
+      integration: lg_ac_infrared
+      domain: climate
+  fields:
+    minutes:
+      name: Minutes
+      description: 0 cancels; 60-420 mirrors the remote's 1h..7h presets.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 1439
+          step: 30
+          unit_of_measurement: min
+          mode: slider
+
+set_schedule_timer:
+  name: Set schedule timer
+  description: >
+    Schedule the AC to turn on or off after a delay. Independent of the
+    sleep timer.
+  target:
+    entity:
+      integration: lg_ac_infrared
+      domain: climate
+  fields:
+    action:
+      name: Action
+      description: Whether the AC should turn on or off when the timer fires.
+      required: true
+      selector:
+        select:
+          options:
+            - "on"
+            - "off"
+    minutes:
+      name: Delay (minutes)
+      description: Minutes until the action fires.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 1439
+          step: 30
+          unit_of_measurement: min
+          mode: slider
+
+clear_timers:
+  name: Clear all timers
+  description: >
+    Cancel any active sleep, on-schedule, or off-schedule timer.
+  target:
+    entity:
+      integration: lg_ac_infrared
+      domain: climate
