@@ -1,4 +1,15 @@
-"""Climate entity for an LG split-AC controlled via an ESPHome IR proxy."""
+"""Climate entity for an LG split-AC controlled via an ESPHome IR proxy.
+
+Compatible with the **stable** HA `infrared` platform (HA 2026.4–2026.5):
+uses `async_send_command(hass, entity_id, command)` for TX, and reaches
+into `aioesphomeapi.subscribe_infrared_rf_receive` for RX because the
+HA-Core infrared platform does not yet abstract receivers.
+
+When HA upstreams the receiver classes (`InfraredEmitterConsumerEntity`,
+`async_get_receivers`, `InfraredReceiverConsumerEntity`) in a future
+release, this module can switch over without affecting downstream
+configuration.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +29,7 @@ from homeassistant.components.climate import (
 )
 from homeassistant.components.infrared import (
     InfraredCommand,
-    InfraredEmitterConsumerEntity,
+    async_send_command,
 )
 from homeassistant.const import (
     PRECISION_WHOLE,
@@ -104,7 +115,7 @@ async def async_setup_entry(
     async_add_entities([LgAcClimate(entry)])
 
 
-class LgAcClimate(InfraredEmitterConsumerEntity, ClimateEntity, RestoreEntity):
+class LgAcClimate(ClimateEntity, RestoreEntity):
     """A Home Assistant climate entity for an LG split-AC via IR proxy."""
 
     _attr_has_entity_name = True
@@ -133,7 +144,7 @@ class LgAcClimate(InfraredEmitterConsumerEntity, ClimateEntity, RestoreEntity):
     def __init__(self, entry: LgAcConfigEntry) -> None:
         """Initialise the climate entity."""
         self._entry = entry
-        self._infrared_emitter_entity_id = entry.data[CONF_TRANSMITTER_ENTITY_ID]
+        self._tx_entity_id: str = entry.data[CONF_TRANSMITTER_ENTITY_ID]
         self._temperature_sensor_entity_id: str | None = entry.data.get(
             CONF_TEMPERATURE_SENSOR
         )
@@ -214,8 +225,9 @@ class LgAcClimate(InfraredEmitterConsumerEntity, ClimateEntity, RestoreEntity):
         """Mirror the optional room-temperature sensor."""
         if not self._temperature_sensor_entity_id:
             return
-        # Pick up the current value if the sensor is already there.
-        if (state := self.hass.states.get(self._temperature_sensor_entity_id)) is not None:
+        if (
+            state := self.hass.states.get(self._temperature_sensor_entity_id)
+        ) is not None:
             self._update_current_temperature_from_state(state.state)
         self._unsub_temp = async_track_state_change_event(
             self.hass,
@@ -337,7 +349,9 @@ class LgAcClimate(InfraredEmitterConsumerEntity, ClimateEntity, RestoreEntity):
         _LOGGER.debug(
             "TX frame 0x%07X (%d entries) for %s", frame, len(timings), state
         )
-        await self._send_command(_RawInfraredCommand(timings))
+        await async_send_command(
+            self.hass, self._tx_entity_id, _RawInfraredCommand(timings)
+        )
 
     # ----------------- receive (state sync from original remote) -----------------
 

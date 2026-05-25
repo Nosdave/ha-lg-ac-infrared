@@ -9,13 +9,13 @@ import voluptuous as vol
 from homeassistant.components.infrared import (
     DOMAIN as INFRARED_DOMAIN,
     async_get_emitters,
-    async_get_receivers,
 )
 from homeassistant.config_entries import (
     ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
@@ -35,6 +35,30 @@ from .const import (
 )
 
 
+def _list_infrared_receivers(
+    hass: HomeAssistant, emitter_ids: list[str]
+) -> list[str]:
+    """Return entity_ids of likely IR receivers in the infrared.* domain.
+
+    HA 2026.5 only exposes emitters via the public helper. Receivers in the
+    entity registry are everything in the `infrared.*` namespace that isn't
+    a known emitter. Filter heuristically by object_id suffix to avoid
+    catching unrelated entities once HA adds dedicated receiver classes.
+    """
+    entity_registry = er.async_get(hass)
+    emitter_set = set(emitter_ids)
+    result: list[str] = []
+    for ent in entity_registry.entities.values():
+        if ent.domain != INFRARED_DOMAIN:
+            continue
+        if ent.entity_id in emitter_set:
+            continue
+        # Heuristic: ESPHome ir_rf_proxy receivers end in "_receiver"
+        if "receiver" in ent.entity_id:
+            result.append(ent.entity_id)
+    return result
+
+
 class LgAcInfraredConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial setup flow."""
 
@@ -47,7 +71,10 @@ class LgAcInfraredConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         emitter_ids = list(async_get_emitters(self.hass))
-        receiver_ids = list(async_get_receivers(self.hass))
+        # HA 2026.5 does not yet have async_get_receivers — derive the
+        # receiver list by walking the entity registry for infrared.* entities
+        # that aren't emitters.
+        receiver_ids = _list_infrared_receivers(self.hass, emitter_ids)
         if not emitter_ids:
             return self.async_abort(reason="no_infrared_emitter")
 
