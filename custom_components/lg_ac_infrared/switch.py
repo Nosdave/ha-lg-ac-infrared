@@ -198,6 +198,11 @@ class LgAcSwingVSwitch(SwitchEntity, RestoreEntity):
         self._attr_assumed_state = True
         self._attr_is_on = False
         self._unsub_rx: Any | None = None
+        # Suppress the self-echo: when we send a toggle, the Mate's own
+        # receiver picks it up within milliseconds and would otherwise
+        # flip the assumed state right back. Block RX of the toggle
+        # frame for a short window after every TX.
+        self._suppress_rx_until: float = 0.0
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -224,6 +229,9 @@ class LgAcSwingVSwitch(SwitchEntity, RestoreEntity):
         if send is None:
             _LOGGER.warning("Climate entity not yet ready — swing ignored")
             return
+        # Open the suppression window BEFORE awaiting the send so the
+        # self-echo (which may arrive before send() returns) is caught.
+        self._suppress_rx_until = self.hass.loop.time() + 1.5
         await send(codec.SWING_V_TOGGLE)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -260,6 +268,9 @@ class LgAcSwingVSwitch(SwitchEntity, RestoreEntity):
         frame = codec.decode_frame(list(event.timings))
         if frame != codec.SWING_V_TOGGLE:
             return
-        # Each toggle reception flips the assumed state.
+        # Ignore the self-echo of our own TX. Genuine remote presses
+        # arrive outside this window and still flip the state.
+        if self.hass.loop.time() < self._suppress_rx_until:
+            return
         self._attr_is_on = not self._attr_is_on
         self.async_write_ha_state()
