@@ -25,7 +25,10 @@ from aioesphomeapi import APIClient  # noqa: E402
 from aioesphomeapi.model import InfraredInfo  # noqa: E402
 
 DEFAULT_PSK_FILE = Path(
-    r"c:/Users/david/dev/.secrets/ha-green/xiao-ir-mate-7cb510.psk"
+    os.environ.get(
+        "LG_AC_PSK_FILE",
+        str(Path.home() / ".secrets" / "ha-green" / "xiao-ir-mate.psk"),
+    )
 )
 
 
@@ -129,7 +132,10 @@ async def run(host: str, port: int, psk: str, frame: int) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Send-Test for the LG-AC encoder")
-    ap.add_argument("--host", default="xiao-ir-mate-7cb510.local")
+    ap.add_argument(
+        "--host",
+        default=os.environ.get("LG_AC_HOST", "xiao-ir-mate.local"),
+    )
     ap.add_argument("--port", type=int, default=6053)
     ap.add_argument("--noise-psk", default=None,
                     help=f"Defaults to {DEFAULT_PSK_FILE} or $ESPHOME_NOISE_PSK")

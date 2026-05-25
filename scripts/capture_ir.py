@@ -22,7 +22,10 @@ from datetime import datetime
 from pathlib import Path
 
 DEFAULT_PSK_FILE = Path(
-    r"c:/Users/david/dev/.secrets/ha-green/xiao-ir-mate-7cb510.psk"
+    os.environ.get(
+        "LG_AC_PSK_FILE",
+        str(Path.home() / ".secrets" / "ha-green" / "xiao-ir-mate.psk"),
+    )
 )
 
 try:
@@ -191,7 +194,10 @@ def resolve_psk(cli_value: str | None) -> str | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Capture IR events from a Xiao IR Mate")
-    ap.add_argument("--host", default="xiao-ir-mate-7cb510.local")
+    ap.add_argument(
+        "--host",
+        default=os.environ.get("LG_AC_HOST", "xiao-ir-mate.local"),
+    )
     ap.add_argument("--port", type=int, default=6053)
     ap.add_argument("--password", default=None,
                     help="ESPHome API password (legacy auth, usually empty)")
