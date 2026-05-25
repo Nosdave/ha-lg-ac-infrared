@@ -33,6 +33,14 @@
       "clear_timers": {
         "name": "Clear all timers"
       }
+    },
+    "switch": {
+      "clean": {
+        "name": "Auto-clean"
+      },
+      "purify": {
+        "name": "Plasma purify"
+      }
     }
   },
   "services": {

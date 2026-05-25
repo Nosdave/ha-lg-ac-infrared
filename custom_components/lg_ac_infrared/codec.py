@@ -92,9 +92,13 @@ PURIFY_ON = 0x88C000C
 PURIFY_OFF = 0x88C0084
 
 # Auto-clean / Self-cleaning (the "face with nose" button — dries the
-# evaporator after cool mode to prevent mould)
-CLEAN_ON = 0x88C00C8
-CLEAN_OFF = 0x88C00B7
+# evaporator after cool mode to prevent mould).
+# NOTE: pyhvac has these inverted (claims 0xC8=on / 0xB7=off). Issue
+# #1772 on IRremoteESP8266 — a real user capture of LG6711A20083V (the
+# closest sibling of our 6711A20073Z) — proves the opposite, and live
+# testing on A12AHD on 2026-05-25 confirmed pyhvac is wrong.
+CLEAN_ON = 0x88C00B7
+CLEAN_OFF = 0x88C00C8
 
 # Energy-save modes (inverter models only — may be no-op on A12AHD)
 ENERGY_SAVE_OFF = 0x88C07F2
@@ -345,7 +349,7 @@ if __name__ == "__main__":
         (0x880B746, "ON Auto 22C fan=4=Max (real capture)"),
         (0x8810089, "Jet ON  -> not a state frame"),
         (0x88A03C9, "Sleep 1h  -> not a state frame"),
-        (0x88C00C8, "Clean ON  -> not a state frame"),
+        (CLEAN_ON, "Clean ON (0x88C00B7)  -> not a state frame"),
         (0x88C0051, "OFF canonical  -> power_on=False"),
     ]
     for frame, label in samples:
@@ -353,8 +357,8 @@ if __name__ == "__main__":
         print(f"decode(0x{frame:07X})  {label:50s}  -> {s}")
 
     # Sub-OFF codes must NOT be reported as off
-    assert decode_state(0x88C00C8) is None, "Clean ON leaks as power-off"
-    assert decode_state(0x88C000C) is None, "Purify ON leaks as power-off"
+    assert decode_state(CLEAN_OFF) is None, "Clean OFF leaks as power-off"
+    assert decode_state(PURIFY_ON) is None, "Purify ON leaks as power-off"
     assert decode_state(OFF_FRAME) == LgAcState(power_on=False)
 
     # Named-frame integrity

@@ -33,6 +33,14 @@
       "clear_timers": {
         "name": "Alle Timer löschen"
       }
+    },
+    "switch": {
+      "clean": {
+        "name": "Selbstreiniger"
+      },
+      "purify": {
+        "name": "Plasma-Luftreiniger"
+      }
     }
   },
   "services": {

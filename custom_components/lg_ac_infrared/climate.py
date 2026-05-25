@@ -48,22 +48,14 @@ from .const import (
     MAX_TEMP_C,
     MIN_TEMP_C,
     MODEL,
-    PRESET_CLEAN,
     PRESET_ECO,
     PRESET_JET,
     PRESET_MODES,
     PRESET_NONE,
-    PRESET_PURIFY,
     PRESET_SLEEP,
-    SWING_HIGH,
-    SWING_HIGHEST,
-    SWING_LOW,
-    SWING_LOWEST,
-    SWING_MIDDLE,
     SWING_MODES,
     SWING_OFF,
     SWING_ON,
-    SWING_UPPER_MIDDLE,
 )
 
 if TYPE_CHECKING:
@@ -95,17 +87,11 @@ LG_TO_HA_FAN: dict[Fan, str] = {v: k for k, v in HA_FAN_TO_LG.items()}
 LG_TO_HA_FAN[Fan.LOW] = FAN_LOW
 LG_TO_HA_FAN[Fan.HIGH] = FAN_HIGH
 
-SWING_MODE_TO_FRAME: dict[str, int] = {
-    SWING_OFF: codec.SWING_V_OFF,
-    SWING_ON: codec.SWING_V_SWING,
-    SWING_LOWEST: codec.SWING_V_LOWEST,
-    SWING_LOW: codec.SWING_V_LOW,
-    SWING_MIDDLE: codec.SWING_V_MIDDLE,
-    SWING_UPPER_MIDDLE: codec.SWING_V_UPPER_MIDDLE,
-    SWING_HIGH: codec.SWING_V_HIGH,
-    SWING_HIGHEST: codec.SWING_V_HIGHEST,
-}
-FRAME_TO_SWING_MODE: dict[int, str] = {v: k for k, v in SWING_MODE_TO_FRAME.items()}
+# A12AHD-class swing: the remote only emits SWING_V_TOGGLE (0x8810001)
+# and the AC interprets every press as a flip between on/off. We track
+# the assumed state optimistically and send the same toggle code for
+# both directions.
+SWING_TOGGLE_FRAME = codec.SWING_V_TOGGLE
 
 
 class _RawInfraredCommand(InfraredCommand):
@@ -231,7 +217,7 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
                 pass
         if (fan := last.attributes.get(ATTR_FAN_MODE)) in HA_FAN_TO_LG:
             self._attr_fan_mode = fan
-        if (swing := last.attributes.get(ATTR_SWING_MODE)) in SWING_MODE_TO_FRAME:
+        if (swing := last.attributes.get(ATTR_SWING_MODE)) in (SWING_OFF, SWING_ON):
             self._attr_swing_mode = swing
         if (preset := last.attributes.get(ATTR_PRESET_MODE)) in PRESET_MODES:
             self._attr_preset_mode = preset
@@ -364,12 +350,14 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
             self.async_write_ha_state()
 
     async def async_set_swing_mode(self, swing_mode: str) -> None:
-        if swing_mode not in SWING_MODE_TO_FRAME:
+        if swing_mode not in (SWING_OFF, SWING_ON):
             raise ValueError(f"Unsupported swing_mode: {swing_mode}")
         previous = self._attr_swing_mode
+        if previous == swing_mode:
+            return
         self._attr_swing_mode = swing_mode
         try:
-            await self.async_send_frame(SWING_MODE_TO_FRAME[swing_mode])
+            await self.async_send_frame(SWING_TOGGLE_FRAME)
         except Exception:
             self._attr_swing_mode = previous
             raise
@@ -392,9 +380,13 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
             self.async_write_ha_state()
 
     async def _apply_preset(self, previous: str, new: str) -> None:
-        """Translate a preset transition into one or two IR frames."""
+        """Translate a preset transition into one IR frame.
+
+        Only mutually-exclusive modes live here: Jet, Sleep, Eco.
+        Clean and Purify are independent switches (see switch.py) so
+        they can run in parallel with any preset.
+        """
         if new == PRESET_NONE:
-            # Clearing: send the appropriate off-code per previous preset.
             if previous == PRESET_JET:
                 # Exit Jet by re-asserting the normal state frame.
                 await self._transmit_state(
@@ -403,10 +395,6 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
             elif previous == PRESET_SLEEP:
                 await self.async_send_frame(codec.encode_sleep_timer(0))
                 self._sleep_minutes = 0
-            elif previous == PRESET_CLEAN:
-                await self.async_send_frame(codec.CLEAN_OFF)
-            elif previous == PRESET_PURIFY:
-                await self.async_send_frame(codec.PURIFY_OFF)
             elif previous == PRESET_ECO:
                 await self.async_send_frame(codec.ENERGY_SAVE_OFF)
             return
@@ -418,10 +406,6 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
                 codec.encode_sleep_timer(DEFAULT_SLEEP_MINUTES)
             )
             self._sleep_minutes = DEFAULT_SLEEP_MINUTES
-        elif new == PRESET_CLEAN:
-            await self.async_send_frame(codec.CLEAN_ON)
-        elif new == PRESET_PURIFY:
-            await self.async_send_frame(codec.PURIFY_ON)
         elif new == PRESET_ECO:
             await self.async_send_frame(codec.ENERGY_SAVE_60)
 
@@ -464,11 +448,12 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
                 self.async_write_ha_state()
             return
 
-        if frame in FRAME_TO_SWING_MODE:
-            new_swing = FRAME_TO_SWING_MODE[frame]
-            if self._attr_swing_mode != new_swing:
-                self._attr_swing_mode = new_swing
-                self.async_write_ha_state()
+        if frame == SWING_TOGGLE_FRAME:
+            # Toggle: flip the assumed state and emit.
+            self._attr_swing_mode = (
+                SWING_OFF if self._attr_swing_mode == SWING_ON else SWING_ON
+            )
+            self.async_write_ha_state()
             return
 
         state = codec.decode_state(frame)
@@ -480,30 +465,14 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
         self._apply_received_state(state)
 
     def _absorb_named_frame(self, frame: int) -> bool:
-        """Handle Function-frames that map to presets. Return True if handled."""
+        """Handle Function-frames that map to climate presets.
+
+        Clean and Purify are handled by their respective switch entities
+        (they can be on in parallel with any preset).
+        """
         if frame == codec.JET_ON:
             if self._attr_preset_mode != PRESET_JET:
                 self._attr_preset_mode = PRESET_JET
-                self.async_write_ha_state()
-            return True
-        if frame == codec.CLEAN_ON:
-            if self._attr_preset_mode != PRESET_CLEAN:
-                self._attr_preset_mode = PRESET_CLEAN
-                self.async_write_ha_state()
-            return True
-        if frame == codec.CLEAN_OFF:
-            if self._attr_preset_mode == PRESET_CLEAN:
-                self._attr_preset_mode = PRESET_NONE
-                self.async_write_ha_state()
-            return True
-        if frame == codec.PURIFY_ON:
-            if self._attr_preset_mode != PRESET_PURIFY:
-                self._attr_preset_mode = PRESET_PURIFY
-                self.async_write_ha_state()
-            return True
-        if frame == codec.PURIFY_OFF:
-            if self._attr_preset_mode == PRESET_PURIFY:
-                self._attr_preset_mode = PRESET_NONE
                 self.async_write_ha_state()
             return True
         if frame == codec.TIMER_CLEAR_ALL:

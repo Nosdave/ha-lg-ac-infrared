@@ -1,7 +1,7 @@
 {
   "domain": "lg_ac_infrared",
   "name": "LG AC Infrared",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "codeowners": ["@Nosdave"],
   "config_flow": true,
   "dependencies": ["esphome", "infrared"],
