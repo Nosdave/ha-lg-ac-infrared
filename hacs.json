@@ -2,6 +2,5 @@
   "name": "LG AC Infrared",
   "render_readme": true,
   "homeassistant": "2026.4.0",
-  "country": ["DE", "AT", "CH"],
   "zip_release": false
 }
