@@ -40,6 +40,9 @@
       },
       "purify": {
         "name": "Plasma-Luftreiniger"
+      },
+      "swing_vertical": {
+        "name": "Vertikale Oszillation"
       }
     }
   },

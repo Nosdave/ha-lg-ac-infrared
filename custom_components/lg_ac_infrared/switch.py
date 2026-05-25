@@ -48,6 +48,7 @@ async def async_setup_entry(
         [
             LgAcCleanSwitch(entry),
             LgAcPurifySwitch(entry),
+            LgAcSwingVSwitch(entry),
         ]
     )
 
@@ -167,3 +168,98 @@ class LgAcPurifySwitch(_LgAcToggleSwitch):
     _suffix = "purify"
     _attr_translation_key = "purify"
     _attr_icon = "mdi:air-purifier"
+
+
+class LgAcSwingVSwitch(SwitchEntity, RestoreEntity):
+    """Vertical swing — toggle protocol with optimistic on/off semantics.
+
+    A12AHD-class remotes only send the single 0x8810001 toggle code; the
+    AC flips its own swing state on every press. We track an assumed
+    boolean state and emit the toggle whenever the user requests a flip.
+    RX of the toggle frame (e.g. user pressed the original remote) flips
+    the assumed state back into sync.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "swing_vertical"
+    _attr_icon = "mdi:air-conditioner"
+
+    def __init__(self, entry: LgAcConfigEntry) -> None:
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_swing_vertical"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.data[CONF_NAME],
+            manufacturer=MANUFACTURER,
+            model=MODEL,
+        )
+        # Always assumed — we can never *confirm* what the AC's actual
+        # vane state is; we only see toggle events.
+        self._attr_assumed_state = True
+        self._attr_is_on = False
+        self._unsub_rx: Any | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) is not None:
+            if last.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+                self._attr_is_on = last.state == STATE_ON
+        runtime = self._entry.runtime_data
+        if runtime.rx_key is not None:
+            self._unsub_rx = runtime.client.subscribe_infrared_rf_receive(
+                self._on_ir_event
+            )
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._unsub_rx is not None:
+            try:
+                self._unsub_rx()
+            except (KeyError, RuntimeError):
+                _LOGGER.debug("RX unsubscribe failed", exc_info=True)
+            self._unsub_rx = None
+        await super().async_will_remove_from_hass()
+
+    async def _toggle(self) -> None:
+        send = self._entry.runtime_data.send_frame
+        if send is None:
+            _LOGGER.warning("Climate entity not yet ready — swing ignored")
+            return
+        await send(codec.SWING_V_TOGGLE)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        if self._attr_is_on:
+            return
+        previous = self._attr_is_on
+        self._attr_is_on = True
+        try:
+            await self._toggle()
+        except Exception:
+            self._attr_is_on = previous
+            raise
+        finally:
+            self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        if not self._attr_is_on:
+            return
+        previous = self._attr_is_on
+        self._attr_is_on = False
+        try:
+            await self._toggle()
+        except Exception:
+            self._attr_is_on = previous
+            raise
+        finally:
+            self.async_write_ha_state()
+
+    @callback
+    def _on_ir_event(self, event: InfraredRFReceiveEvent) -> None:
+        runtime = self._entry.runtime_data
+        if event.key != runtime.rx_key:
+            return
+        frame = codec.decode_frame(list(event.timings))
+        if frame != codec.SWING_V_TOGGLE:
+            return
+        # Each toggle reception flips the assumed state.
+        self._attr_is_on = not self._attr_is_on
+        self.async_write_ha_state()

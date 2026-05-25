@@ -8,7 +8,6 @@ from typing import Any, TYPE_CHECKING
 from homeassistant.components.climate import (
     ATTR_FAN_MODE,
     ATTR_PRESET_MODE,
-    ATTR_SWING_MODE,
     ATTR_TEMPERATURE,
     FAN_AUTO,
     FAN_HIGH,
@@ -53,9 +52,6 @@ from .const import (
     PRESET_MODES,
     PRESET_NONE,
     PRESET_SLEEP,
-    SWING_MODES,
-    SWING_OFF,
-    SWING_ON,
 )
 
 if TYPE_CHECKING:
@@ -87,11 +83,9 @@ LG_TO_HA_FAN: dict[Fan, str] = {v: k for k, v in HA_FAN_TO_LG.items()}
 LG_TO_HA_FAN[Fan.LOW] = FAN_LOW
 LG_TO_HA_FAN[Fan.HIGH] = FAN_HIGH
 
-# A12AHD-class swing: the remote only emits SWING_V_TOGGLE (0x8810001)
-# and the AC interprets every press as a flip between on/off. We track
-# the assumed state optimistically and send the same toggle code for
-# both directions.
-SWING_TOGGLE_FRAME = codec.SWING_V_TOGGLE
+# Vertical swing is exposed as switch.*_swing_vertical (see switch.py)
+# because the A12AHD only supports toggle semantics, which an on/off
+# Switch entity represents better than a climate.swing_mode dropdown.
 
 
 class _RawInfraredCommand(InfraredCommand):
@@ -138,12 +132,10 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
         HVACMode.HEAT,
     ]
     _attr_fan_modes = [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
-    _attr_swing_modes = SWING_MODES
     _attr_preset_modes = PRESET_MODES
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.FAN_MODE
-        | ClimateEntityFeature.SWING_MODE
         | ClimateEntityFeature.PRESET_MODE
         | ClimateEntityFeature.TURN_ON
         | ClimateEntityFeature.TURN_OFF
@@ -172,7 +164,6 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
         self._attr_hvac_mode = HVACMode.OFF
         self._attr_target_temperature = DEFAULT_TARGET_TEMP_C
         self._attr_fan_mode = FAN_AUTO
-        self._attr_swing_mode = SWING_OFF
         self._attr_preset_mode = PRESET_NONE
         self._attr_current_temperature: float | None = None
         self._last_known_hvac: HVACMode = HVACMode.COOL
@@ -217,8 +208,6 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
                 pass
         if (fan := last.attributes.get(ATTR_FAN_MODE)) in HA_FAN_TO_LG:
             self._attr_fan_mode = fan
-        if (swing := last.attributes.get(ATTR_SWING_MODE)) in (SWING_OFF, SWING_ON):
-            self._attr_swing_mode = swing
         if (preset := last.attributes.get(ATTR_PRESET_MODE)) in PRESET_MODES:
             self._attr_preset_mode = preset
 
@@ -349,21 +338,6 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
         finally:
             self.async_write_ha_state()
 
-    async def async_set_swing_mode(self, swing_mode: str) -> None:
-        if swing_mode not in (SWING_OFF, SWING_ON):
-            raise ValueError(f"Unsupported swing_mode: {swing_mode}")
-        previous = self._attr_swing_mode
-        if previous == swing_mode:
-            return
-        self._attr_swing_mode = swing_mode
-        try:
-            await self.async_send_frame(SWING_TOGGLE_FRAME)
-        except Exception:
-            self._attr_swing_mode = previous
-            raise
-        finally:
-            self.async_write_ha_state()
-
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         if preset_mode not in PRESET_MODES:
             raise ValueError(f"Unsupported preset_mode: {preset_mode}")
@@ -446,14 +420,6 @@ class LgAcClimate(ClimateEntity, RestoreEntity):
                 self._attr_preset_mode = PRESET_SLEEP
                 self._sleep_minutes = minutes
                 self.async_write_ha_state()
-            return
-
-        if frame == SWING_TOGGLE_FRAME:
-            # Toggle: flip the assumed state and emit.
-            self._attr_swing_mode = (
-                SWING_OFF if self._attr_swing_mode == SWING_ON else SWING_ON
-            )
-            self.async_write_ha_state()
             return
 
         state = codec.decode_state(frame)

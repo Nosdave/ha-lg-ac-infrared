@@ -40,6 +40,9 @@
       },
       "purify": {
         "name": "Plasma purify"
+      },
+      "swing_vertical": {
+        "name": "Vertical swing"
       }
     }
   },
