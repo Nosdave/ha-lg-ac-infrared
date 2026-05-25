@@ -211,12 +211,21 @@ async def _resolve_receiver_key(
 ) -> int | None:
     """Map an HA infrared receiver entity_id to the ESPHome protobuf key."""
     try:
+        from aioesphomeapi.core import APIConnectionError
         from aioesphomeapi.model import InfraredCapability, InfraredInfo
     except ImportError:
         _LOGGER.error("aioesphomeapi.model.InfraredInfo not available")
         return None
 
-    entities, _ = await client.list_entities_services()
+    try:
+        entities, _ = await client.list_entities_services()
+    except APIConnectionError as err:
+        # Common during HA restart: ESPHome entry has just transitioned
+        # to LOADED but the underlying APIClient is still finishing the
+        # noise handshake/authentication. Let HA retry us shortly.
+        raise ConfigEntryNotReady(
+            f"ESPHome client not fully ready yet: {err}"
+        ) from err
     receivers = [
         info
         for info in entities
