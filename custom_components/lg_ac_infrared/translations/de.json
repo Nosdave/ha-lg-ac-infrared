@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "LG Klima per Infrarot",
+        "description": "Lege eine Climate-Entity an, die deine LG-Split-Klimaanlage über einen ESPHome-IR-Proxy steuert. Der Proxy muss mindestens eine Infrarot-Sender-Entity bereitstellen; ein Empfänger ist optional, ermöglicht aber Zustands-Sync, wenn die Original-Fernbedienung verwendet wird.",
+        "data": {
+          "name": "Name der Climate-Entity",
+          "transmitter_entity_id": "IR-Proxy-Sender",
+          "receiver_entity_id": "IR-Proxy-Empfänger (optional)",
+          "temperature_sensor": "Raumtemperatur-Sensor (optional)"
+        },
+        "data_description": {
+          "transmitter_entity_id": "Die infrared.*-Sender-Entity deines ESPHome-IR-Proxy-Geräts.",
+          "receiver_entity_id": "Dekodiert IR-Codes der Original-Fernbedienung, damit HA manuelle Änderungen mitbekommt.",
+          "temperature_sensor": "Wird in der Climate-Karte als aktuelle Temperatur angezeigt."
+        }
+      }
+    },
+    "error": {
+      "transmitter_not_on_esphome": "Der ausgewählte Sender gehört zu keiner ESPHome-Integration."
+    },
+    "abort": {
+      "no_infrared_emitter": "Keine Infrarot-Sender gefunden. Flash zuerst eine ESPHome-ir_rf_proxy-Firmware.",
+      "already_configured": "Für diesen IR-Proxy ist bereits eine LG-Klima-Entity eingerichtet."
+    }
+  }
+}

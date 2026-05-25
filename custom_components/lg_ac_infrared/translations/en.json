@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "LG AC Infrared",
+        "description": "Set up a Home Assistant climate entity that drives your LG split-AC through an ESPHome IR proxy. The proxy must expose at least an infrared transmitter entity; a receiver is optional but enables state synchronisation with the original remote.",
+        "data": {
+          "name": "Climate entity name",
+          "transmitter_entity_id": "IR proxy transmitter",
+          "receiver_entity_id": "IR proxy receiver (optional)",
+          "temperature_sensor": "Room temperature sensor (optional)"
+        },
+        "data_description": {
+          "transmitter_entity_id": "The infrared.* transmitter on your ESPHome IR proxy device.",
+          "receiver_entity_id": "Enables decoding of IR codes from the original remote so that HA can mirror manual changes.",
+          "temperature_sensor": "Displayed as the current_temperature on the climate card."
+        }
+      }
+    },
+    "error": {
+      "transmitter_not_on_esphome": "The selected transmitter is not provided by an ESPHome config entry."
+    },
+    "abort": {
+      "no_infrared_emitter": "No infrared transmitter entities found. Flash an ESPHome ir_rf_proxy firmware first.",
+      "already_configured": "This IR proxy already has an LG AC entity configured."
+    }
+  }
+}
