@@ -177,11 +177,11 @@ python scripts/capture_ir.py --host xiao-ir-mate-XXXX.local
 python scripts/send_test.py --frame 0x8800707
 ```
 
-`scripts/fetch_psk.py` is a personal-use helper that copies the ESPHome
+`scripts/fetch_psk.py` is an optional helper that copies the ESPHome
 noise PSK from a Home Assistant instance via SSH into a local secrets
-file; it expects an `ssh ha-green` alias and writes to
-`c:/Users/david/dev/.secrets/ha-green/xiao-ir-mate-7cb510.psk`. Adapt
-the constants for your environment.
+file, so `capture_ir.py` and `send_test.py` can authenticate without
+the key ever being printed. Run `python scripts/fetch_psk.py --help`
+for the available flags (SSH host, output path, entry-id, list-mode).
 
 ## Credits
 

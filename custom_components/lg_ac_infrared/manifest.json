@@ -1,7 +1,6 @@
 {
   "domain": "lg_ac_infrared",
   "name": "LG AC Infrared",
-  "version": "0.2.4",
   "codeowners": ["@Nosdave"],
   "config_flow": true,
   "dependencies": ["esphome", "infrared"],
@@ -10,5 +9,6 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Nosdave/ha-lg-ac-infrared/issues",
   "loggers": ["custom_components.lg_ac_infrared"],
-  "requirements": []
+  "requirements": [],
+  "version": "0.2.4"
 }
