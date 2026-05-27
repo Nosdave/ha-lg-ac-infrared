@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/Nosdave/ha-lg-ac-infrared/issues",
   "loggers": ["custom_components.lg_ac_infrared"],
   "requirements": [],
-  "version": "0.2.4"
+  "version": "0.2.5"
 }

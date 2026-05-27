@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented here.
 
+## 0.2.5 — 2026-05-27
+
+### Fixed
+- **HACS-Default-Submission**: the `v0.2.4` release tag was created
+  *before* the brand icon was moved from `branding/` into
+  `custom_components/lg_ac_infrared/brand/`, so the HACS validation
+  action — which checks the tagged release, not `main` — couldn't
+  find the icon. Re-tag on the current HEAD that has the icon in
+  place. No code change in the integration itself.
+
 ## 0.2.4 — 2026-05-25
 
 ### Fixed
